@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "installCommand": "corepack pnpm install",
+  "buildCommand": "corepack pnpm run build",
+  "builds": [
+    {
+      "src": "api/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.ts"
+    }
+  ]
+}
