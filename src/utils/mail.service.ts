@@ -1,9 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
+type TransporterLike = {
+  sendMail: (options: {
+    from?: string;
+    to: string;
+    subject: string;
+    html: string;
+  }) => Promise<unknown>;
+};
+
+type NodemailerModule = {
+  createTransport: (options: {
+    host: string;
+    port: number;
+    secure: boolean;
+    auth: { user?: string; pass?: string };
+  }) => TransporterLike;
+};
+
 @Injectable()
 export class MailService {
-  private readonly transporter = nodemailer.createTransport({
+  private readonly transporter: TransporterLike = (
+    nodemailer as unknown as NodemailerModule
+  ).createTransport({
     host: 'smtp.gmail.com',
     port: 587,
     secure: false,

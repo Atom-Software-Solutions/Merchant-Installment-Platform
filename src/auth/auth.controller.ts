@@ -106,7 +106,7 @@ export class AuthController {
           </body>
         </html>
       `;
-    } catch (error) {
+    } catch {
       return `
         <html>
           <head>

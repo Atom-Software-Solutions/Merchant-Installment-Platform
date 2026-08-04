@@ -13,6 +13,11 @@ import { MailService } from '../utils/mail.service';
 
 type SafeUser = Omit<User, 'passwordHash'>;
 
+type ActivationTokenPayload = {
+  sub?: string;
+  purpose?: string;
+};
+
 type RegisterUserInput = Omit<
   Prisma.UserCreateInput,
   'email' | 'phoneNumber'
@@ -74,7 +79,7 @@ export class AuthService {
         try {
           const token = this.createActivationToken(createdUser.id);
           await this.mailService.sendActivationEmail(createdUser.email, token);
-        } catch (mailError) {
+        } catch {
           throw new InternalServerErrorException(
             'User created, but activation email could not be sent.',
           );
@@ -99,7 +104,9 @@ export class AuthService {
       throw new NotFoundException('Invalid activation token');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -130,7 +137,11 @@ export class AuthService {
     email: string | undefined,
     phoneNumber: string | undefined,
     password: string,
-  ): Promise<{ accessToken: string; user: SafeUser; requiresActivation: boolean }> {
+  ): Promise<{
+    accessToken: string;
+    user: SafeUser;
+    requiresActivation: boolean;
+  }> {
     const whereClauses: Array<Record<string, string>> = [];
 
     if (email) {
@@ -187,29 +198,42 @@ export class AuthService {
   }
 
   private createActivationToken(userId: string): string {
-    return this.jwt.sign({ sub: userId, purpose: 'activate-account' }, { expiresIn: '1d' });
+    return this.jwt.sign(
+      { sub: userId, purpose: 'activate-account' },
+      { expiresIn: '1d' },
+    );
   }
 
-  private verifyActivationToken(token: string): { sub?: string; purpose?: string } | null {
+  private verifyActivationToken(
+    token: string,
+  ): { sub: string; purpose: string } | null {
     if (!token) {
       return null;
     }
 
     try {
-      const payload = this.jwt.verify(token);
-      if (
-        typeof payload === 'object' &&
-        payload !== null &&
-        payload.sub &&
-        payload.purpose === 'activate-account'
-      ) {
-        return payload as { sub: string; purpose: string };
+      const payload = this.jwt.verify(token) as unknown;
+      if (this.isActivationTokenPayload(payload)) {
+        return payload;
       }
     } catch {
       // ignore invalid or expired token
     }
 
     return null;
+  }
+
+  private isActivationTokenPayload(
+    payload: unknown,
+  ): payload is { sub: string; purpose: string } {
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'sub' in payload &&
+      typeof (payload as ActivationTokenPayload).sub === 'string' &&
+      'purpose' in payload &&
+      (payload as ActivationTokenPayload).purpose === 'activate-account'
+    );
   }
 
   private isUniqueConstraintError(
