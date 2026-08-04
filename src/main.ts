@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import {
   ExpressAdapter,
   NestExpressApplication,
@@ -20,6 +21,14 @@ async function createApp() {
       origin: true,
       credentials: true,
     });
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
 
     await app.init();
     cachedApp = app;
