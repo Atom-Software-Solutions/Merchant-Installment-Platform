@@ -10,6 +10,16 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type SafeUser = Omit<User, 'passwordHash'>;
 
+type RegisterUserInput = Omit<
+  Prisma.UserCreateInput,
+  'email' | 'phoneNumber'
+> & {
+  email?: string;
+  phoneNumber?: string;
+  firstName: string;
+  lastName: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -17,33 +27,76 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  async createUser(data: Prisma.UserCreateInput): Promise<User> {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: data.email },
+  async createUser(data: RegisterUserInput): Promise<User> {
+    if (!data.email && !data.phoneNumber) {
+      throw new ConflictException(
+        'Either email or phoneNumber must be provided',
+      );
+    }
+
+    const whereClauses: Array<Record<string, string>> = [];
+    if (data.email) {
+      whereClauses.push({ email: data.email });
+    }
+    if (data.phoneNumber) {
+      whereClauses.push({ phoneNumber: data.phoneNumber });
+    }
+
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        OR: whereClauses,
+      },
     });
 
     if (existingUser) {
-      throw new ConflictException('Email is already registered');
+      throw new ConflictException('Email or phoneNumber is already registered');
     }
 
     try {
-      return await this.prisma.user.create({ data });
+      const createData = {
+        email: data.email ?? '',
+        passwordHash: data.passwordHash,
+        role: data.role,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phoneNumber: data.phoneNumber,
+      };
+
+      return await this.prisma.user.create({
+        data: createData,
+      });
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
-        throw new ConflictException('Email is already registered');
+        throw new ConflictException(
+          'Email or phoneNumber is already registered',
+        );
       }
       throw error;
     }
   }
 
   async login(
-    email: string,
+    email: string | undefined,
+    phoneNumber: string | undefined,
     password: string,
   ): Promise<{ accessToken: string; user: SafeUser }> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const whereClauses: Array<Record<string, string>> = [];
+
+    if (email) {
+      whereClauses.push({ email });
+    }
+    if (phoneNumber) {
+      whereClauses.push({ phoneNumber });
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: whereClauses,
+      },
+    });
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const passwordMatches = await argon2.verify(user.passwordHash, password);

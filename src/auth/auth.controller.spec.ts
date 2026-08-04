@@ -43,8 +43,23 @@ describe('AuthController validation', () => {
       .send({
         email: 'a@test.com',
         password: 'secret',
+        firstName: 'Alice',
+        lastName: 'Smith',
         role: 'CUSTOMER',
         extraField: true,
+      });
+
+    expect(response.status).toBe(400);
+    expect(authService.createUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing email and phoneNumber on register', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        password: 'secret',
+        firstName: 'Alice',
+        lastName: 'Smith',
       });
 
     expect(response.status).toBe(400);
