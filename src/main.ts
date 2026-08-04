@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
+import {
+  ExpressAdapter,
+  NestExpressApplication,
+} from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { AppModule } from './app.module';
 
@@ -31,9 +34,12 @@ export async function bootstrap() {
   return app;
 }
 
-export async function handler(req: Request, res: Response) {
+export async function handler(req: Request, res: Response): Promise<unknown> {
   const app = await createApp();
-  const expressApp = app.getHttpAdapter().getInstance();
+  const expressApp = app.getHttpAdapter().getInstance() as (
+    req: Request,
+    res: Response,
+  ) => unknown;
   return expressApp(req, res);
 }
 
