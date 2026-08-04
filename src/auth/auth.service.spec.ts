@@ -74,6 +74,7 @@ describe('AuthService', () => {
     expect(result.accessToken).toBe('token');
     expect(result.user.email).toBe('a@test.com');
     expect(result.user).not.toHaveProperty('passwordHash');
+    expect(result.requiresActivation).toBe(false);
     expect(prisma.user.update).toHaveBeenCalled();
   });
 
@@ -158,6 +159,7 @@ describe('AuthService', () => {
     const result = await service.login('b@test.com', undefined, 'secret');
 
     expect(result.accessToken).toBe('token');
+    expect(result.requiresActivation).toBe(true);
     expect(jwt.sign).toHaveBeenCalledWith(
       expect.objectContaining({
         sub: user.id,

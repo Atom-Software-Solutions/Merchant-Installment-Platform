@@ -130,7 +130,7 @@ export class AuthService {
     email: string | undefined,
     phoneNumber: string | undefined,
     password: string,
-  ): Promise<{ accessToken: string; user: SafeUser }> {
+  ): Promise<{ accessToken: string; user: SafeUser; requiresActivation: boolean }> {
     const whereClauses: Array<Record<string, string>> = [];
 
     if (email) {
@@ -171,7 +171,11 @@ export class AuthService {
       scope: updatedUser.isActive ? 'auth' : 'resend-activation',
     });
 
-    return { accessToken, user: safeUser };
+    return {
+      accessToken,
+      user: safeUser,
+      requiresActivation: !updatedUser.isActive,
+    };
   }
 
   async findUserByEmail(email: string): Promise<User | null> {
@@ -186,17 +190,26 @@ export class AuthService {
     return this.jwt.sign({ sub: userId, purpose: 'activate-account' }, { expiresIn: '1d' });
   }
 
-  private verifyActivationToken(token: string): { sub?: string } | null {
+  private verifyActivationToken(token: string): { sub?: string; purpose?: string } | null {
     if (!token) {
       return null;
     }
 
     try {
       const payload = this.jwt.verify(token);
-      return typeof payload === 'object' && payload !== null ? payload : null;
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        payload.sub &&
+        payload.purpose === 'activate-account'
+      ) {
+        return payload as { sub: string; purpose: string };
+      }
     } catch {
-      return null;
+      // ignore invalid or expired token
     }
+
+    return null;
   }
 
   private isUniqueConstraintError(
