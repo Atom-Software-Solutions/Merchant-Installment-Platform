@@ -77,8 +77,20 @@ export class AuthController {
       firstName: body.firstName,
       lastName: body.lastName,
       phoneNumber: body.phoneNumber,
-      role: body.role ?? 'CUSTOMER',
+      role: body.role ?? 'MERCHANT',
     });
+  }
+
+  @Get('activate')
+  async activate(@Query('token') token: string) {
+    await this.authService.activateAccount(token);
+    return { message: 'Account activated successfully' };
+  }
+
+  @Post('resend-activation')
+  async resendActivation(@Body('email') email: string) {
+    await this.authService.resendActivationEmail(email);
+    return { message: 'Activation email resent' };
   }
 
   @Post('login')

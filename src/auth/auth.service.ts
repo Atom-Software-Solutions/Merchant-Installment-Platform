@@ -1,12 +1,15 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Prisma, User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../utils/mail.service';
 
 type SafeUser = Omit<User, 'passwordHash'>;
 
@@ -25,6 +28,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly mailService: MailService,
   ) {}
 
   async createUser(data: RegisterUserInput): Promise<User> {
@@ -62,9 +66,22 @@ export class AuthService {
         phoneNumber: data.phoneNumber,
       };
 
-      return await this.prisma.user.create({
+      const createdUser = await this.prisma.user.create({
         data: createData,
       });
+
+      if (createdUser.email) {
+        try {
+          const token = this.createActivationToken(createdUser.id);
+          await this.mailService.sendActivationEmail(createdUser.email, token);
+        } catch (mailError) {
+          throw new InternalServerErrorException(
+            'User created, but activation email could not be sent.',
+          );
+        }
+      }
+
+      return createdUser;
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException(
@@ -73,6 +90,40 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  async activateAccount(token: string): Promise<User> {
+    const payload = this.verifyActivationToken(token);
+
+    if (!payload?.sub) {
+      throw new NotFoundException('Invalid activation token');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.prisma.user.update({
+      where: { id: payload.sub },
+      data: { isActive: true },
+    });
+  }
+
+  async resendActivationEmail(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.isActive) {
+      throw new ConflictException('Account is already active');
+    }
+
+    const token = this.createActivationToken(user.id);
+    await this.mailService.sendActivationEmail(user.email!, token);
   }
 
   async login(
@@ -95,7 +146,7 @@ export class AuthService {
       },
     });
 
-    if (!user || !user.isActive) {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -116,6 +167,8 @@ export class AuthService {
       sub: updatedUser.id,
       email: updatedUser.email,
       role: updatedUser.role,
+      isActive: updatedUser.isActive,
+      scope: updatedUser.isActive ? 'auth' : 'resend-activation',
     });
 
     return { accessToken, user: safeUser };
@@ -127,6 +180,23 @@ export class AuthService {
 
   async findUserById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
+  }
+
+  private createActivationToken(userId: string): string {
+    return this.jwt.sign({ sub: userId, purpose: 'activate-account' }, { expiresIn: '1d' });
+  }
+
+  private verifyActivationToken(token: string): { sub?: string } | null {
+    if (!token) {
+      return null;
+    }
+
+    try {
+      const payload = this.jwt.verify(token);
+      return typeof payload === 'object' && payload !== null ? payload : null;
+    } catch {
+      return null;
+    }
   }
 
   private isUniqueConstraintError(
